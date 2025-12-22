@@ -1,0 +1,91 @@
+-- REQUETE 1
+-- En excluant les commandes annulées, 
+-- quelles sont les commandes récentes de moins de 3 mois
+-- que les clients ont reçues avec au moins 3 jours de retard ?
+
+SELECT
+    o.order_id,
+    o.order_status,
+    o.customer_id,
+    o.order_delivered_customer_date,
+    o.order_estimated_delivery_date,
+    JULIANDAY(o.order_delivered_customer_date) 
+      - JULIANDAY(o.order_estimated_delivery_date) AS retard_jours
+FROM orders o
+WHERE o.order_status != 'canceled'
+AND o.order_delivered_customer_date IS NOT NULL
+AND o.order_purchase_timestamp >= (
+    SELECT DATE(MAX(order_purchase_timestamp), '-3 months')
+    FROM orders
+)
+AND retard_jours >= 3;
+-- 322 rows
+
+----------------------------------------------------
+-- REQUETE 2
+-- Qui sont les vendeurs ayant généré un chiffre d'affaires de plus de 100000 Real
+-- sur des commandes livrées via Olist ?
+
+SELECT
+    oi.seller_id,
+    SUM(oi.price) AS chiffre_affaires,
+    COUNT(oi.product_id) AS total_products
+FROM orders o
+INNER JOIN order_items oi ON o.order_id = oi.order_id
+WHERE o.order_status = 'delivered'
+GROUP BY oi.seller_id
+HAVING SUM(oi.price) > 100000;
+-- 17 rows
+
+----------------------------------------------------
+-- REQUETE 3
+-- Qui sont les nouveaux vendeurs (moins de 3 mois d'ancienneté) 
+-- qui sont déjà très engagés avec la plateforme (ayant déjà vendu plus de 30 produits) ?
+
+SELECT
+    oi.seller_id,
+    COUNT(DISTINCT oi.order_id) AS nb_ventes,
+    COUNT(oi.product_id) AS nb_produits,
+    SUM(oi.price) AS CA,
+    MIN(o.order_purchase_timestamp) AS premiere_vente
+FROM order_items oi
+INNER JOIN orders o ON oi.order_id = o.order_id
+GROUP BY oi.seller_id
+HAVING nb_ventes > 30
+    AND o.order_status = 'delivered'
+    AND premiere_vente > (
+       SELECT DATE(MAX(order_purchase_timestamp), '-3 months')
+       FROM orders
+   );
+-- 3 rows
+-- 240b9776d844d37535668549a396af32
+-- 81f89e42267213cb94da7ddc301651da
+-- d13e50eaa47b4cbe9eb81465865d8cfc
+
+----------------------------------------------------
+-- REQUETE 4
+-- Quels sont les 5 codes postaux, 
+-- enregistrant plus de 30 reviews, 
+-- avec le pire review score moyen sur les 12 derniers mois ?
+
+SELECT
+    c.customer_zip_code_prefix,
+    AVG(r.review_score) AS score_moyen,
+    COUNT(r.review_id) AS nb_reviews
+FROM order_reviews r
+JOIN orders o ON r.order_id = o.order_id
+JOIN customers c ON o.customer_id = c.customer_id
+WHERE o.order_purchase_timestamp >= (
+    SELECT DATE(MAX(order_purchase_timestamp), '-12 months')
+    FROM orders
+)
+GROUP BY c.customer_zip_code_prefix
+HAVING COUNT(r.review_id) > 30
+ORDER BY score_moyen ASC
+LIMIT 5;
+-- 3 rows
+-- 22753
+-- 22770
+-- 22793
+-- 21321
+-- 22780
